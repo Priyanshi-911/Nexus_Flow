@@ -527,6 +527,13 @@ function NexusCanvas() {
         y: event.clientY,
       });
 
+      // 🛠️ FIX: Initialize cron time data for timer nodes
+      const initialConfig: any = {};
+      if (type === "timer") {
+        initialConfig.scheduleType = "cron";
+        initialConfig.cronTime = "12:00 PM";
+      }
+
       const newNode: Node = {
         id: `node_${Date.now()}`,
         type: "nexusNode",
@@ -534,7 +541,7 @@ function NexusCanvas() {
         data: {
           type,
           label: `NODE-${nodes.length + 1}`,
-          config: {},
+          config: initialConfig,
         },
       };
       setNodes((nds) => nds.concat(newNode));
@@ -552,6 +559,13 @@ function NexusCanvas() {
       const snappedX = Math.round(position.x / 20) * 20;
       const snappedY = Math.round(position.y / 20) * 20;
 
+      // 🛠️ FIX: Initialize cron time data for timer nodes
+      const initialConfig: any = {};
+      if (type === "timer") {
+        initialConfig.scheduleType = "cron";
+        initialConfig.cronTime = "12:00 PM";
+      }
+
       const newNode: Node = {
         id: `node_${Date.now()}`,
         type: "nexusNode",
@@ -559,7 +573,7 @@ function NexusCanvas() {
         data: {
           type,
           label: `NODE-${nodes.length + 1}`,
-          config: {},
+          config: initialConfig,
         },
       };
       setNodes((nds) => nds.concat(newNode));

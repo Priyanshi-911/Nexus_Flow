@@ -95,6 +95,50 @@ app.post("/trigger-workflow", async (req, res) => {
             workflowId = `workflow_${safeName}`;
         }
 
+        // 🟢 PRE-PROCESSING: TIMER NODE CRON CONVERSION
+        if (isTimer) {
+            const timerNode = workflowConfig.trigger.type == 'timer' ? workflowConfig.trigger.cronTime : undefined;
+            
+            if (timerNode) {
+
+                if (workflowConfig.trigger.scheduleType === "cron") {
+                    // 🛡️ SAFETY GUARD: Provide fallback string
+                    let timeStr = timerNode;
+                    console.log(`🛡️ Using cronTime: ${timeStr}`);
+                    
+                    if (!timeStr || typeof timeStr !== "string" || !timeStr.includes(" ")) {
+                        console.warn("⚠️ Empty or invalid cronTime detected. Defaulting to 12:00 PM.");
+                        timeStr = "12:00 PM";
+                    }
+                    
+                    try {
+                        const [time, period] = timeStr.split(" ");
+                        let [hour, minute] = time.split(":").map(Number);
+
+                        // Handle 24-hour conversion
+                        if (period === "PM" && hour !== 12) hour += 12;
+                        if (period === "AM" && hour === 12) hour = 0;
+
+                        // Default fallback if parsing resulted in NaN
+                        if (isNaN(hour)) hour = 12;
+                        if (isNaN(minute)) minute = 0;
+
+                        // Cron: minute hour day month dayOfWeek
+                        const cronExpression = `${minute} ${hour} * * *`;
+                        
+                        // Inject the cron back into the configuration object and root trigger object
+                        workflowConfig.trigger.cronExpression = cronExpression;
+                        
+                        console.log(`✅ Converted Time "${timeStr}" to Cron: "${cronExpression}"`);
+                    } catch (err) {
+                        console.error("❌ Fatal parse error on cronTime:", timeStr);
+                        // Fallback to safe default on complete failure
+                        workflowConfig.trigger.cronExpression = "0 12 * * *";
+                    }
+                }
+            }
+        }
+
         // 🟢 HANDLE WEBHOOK RENAME / INVALIDATION
         if (isWebhook) {
             const previousId = typeof previousWorkflowId === 'string' ? previousWorkflowId : null;
