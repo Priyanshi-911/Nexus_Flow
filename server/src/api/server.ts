@@ -6,6 +6,7 @@ import { Server } from "socket.io";
 import { workflowQueue } from "../queue/workflowQueue.js";
 import { redisConnection } from "../config/redis.js"; 
 import { NODE_REGISTRY } from "../engine/nodes/index.js";
+import { createNexusAccount } from "../engine/smartAccount.js";
 
 const app: express.Application = express();
 
@@ -498,6 +499,25 @@ app.get('/workflow-states', async (_req, res) => {
         return res.status(500).json({
             success: false,
             error: error.message || "Internal Server Error",
+        });
+    }
+});
+
+// --- API ROUTE: FETCH SMART ACCOUNT ADDRESS (FOR MANUAL FUNDING) ---
+app.get('/smart-account', async (_req, res) => {
+    try {
+        const nexusClient = await createNexusAccount(0);
+        const accountAddress = nexusClient.account.address;
+
+        return res.json({
+            success: true,
+            accountAddress,
+        });
+    } catch (error: any) {
+        console.error("❌ Smart Account Fetch Error:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || "Failed to fetch smart account address",
         });
     }
 });

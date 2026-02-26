@@ -64,6 +64,7 @@ export const transfer = async (inputs: ActionInput, context: ExecutionContext) =
             isNative: tokenConfig.isNative,
             missingAmountRaw: missingAmountBigInt.toString(), 
             missingAmountFormatted: formatUnits(missingAmountBigInt, tokenConfig.decimals),
+            decimals: tokenConfig.decimals,
             accountAddress: accountAddress,
             workflowId: (context as any).SYSTEM_WORKFLOW_ID || null,
         };

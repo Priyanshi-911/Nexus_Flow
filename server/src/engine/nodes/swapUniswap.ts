@@ -83,6 +83,7 @@ export const swapUniswap = async (inputs: ActionInput, context: ExecutionContext
             isNative: tokenInConfig.isNative,
             missingAmountRaw: missingAmountBigInt.toString(), // Sent as string to preserve precision
             missingAmountFormatted: formatUnits(missingAmountBigInt, tokenInConfig.decimals),
+            decimals: tokenInConfig.decimals,
             accountAddress: accountAddress,
             workflowId: (context as any).SYSTEM_WORKFLOW_ID || null,
         };

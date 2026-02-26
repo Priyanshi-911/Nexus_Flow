@@ -7,7 +7,7 @@ import {
   ArrowDownToLine,
   Info,
 } from "lucide-react";
-import { parseAbi } from "viem";
+import { parseAbi, parseUnits } from "viem";
 import { toast } from "sonner";
 import {
   useAccount,
@@ -23,7 +23,12 @@ const truncateAddress = (address: string) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
-export default function DepositModal({ isOpen, onClose, depositData, onResume }: any) {
+export default function DepositModal({
+  isOpen,
+  onClose,
+  depositData,
+  onResume,
+}: any) {
   const { isConnected } = useAccount();
 
   // Wagmi hooks for sending transactions
@@ -34,6 +39,13 @@ export default function DepositModal({ isOpen, onClose, depositData, onResume }:
   // Track the deposit transaction hash until it's confirmed
   const [pendingHash, setPendingHash] = useState<`0x${string}` | null>(null);
   const [hasResumed, setHasResumed] = useState(false);
+  const [amountInput, setAmountInput] = useState<string>("");
+  const [selectedTokenSymbol, setSelectedTokenSymbol] = useState<string>("ETH");
+  const [selectedIsNative, setSelectedIsNative] = useState<boolean>(true);
+  const [selectedTokenAddress, setSelectedTokenAddress] = useState<
+    string | null
+  >(null);
+  const [selectedDecimals, setSelectedDecimals] = useState<number>(18);
 
   const {
     isSuccess: isConfirmed,
@@ -44,25 +56,94 @@ export default function DepositModal({ isOpen, onClose, depositData, onResume }:
 
   const isProcessing = isSendingETH || isWritingERC20 || isConfirming;
 
+  useEffect(() => {
+    if (!depositData) return;
+
+    // For manual deposits, default to ETH and allow switching
+    if (depositData.code === "MANUAL_DEPOSIT") {
+      setSelectedTokenSymbol("ETH");
+      setSelectedIsNative(true);
+      setSelectedTokenAddress(null);
+      setSelectedDecimals(18);
+    } else {
+      // For DEPOSIT_REQUIRED flows, respect the token from backend
+      setSelectedTokenSymbol(depositData.tokenSymbol);
+      setSelectedIsNative(!!depositData.isNative);
+      setSelectedTokenAddress(depositData.tokenAddress || null);
+      setSelectedDecimals(
+        typeof depositData.decimals === "number"
+          ? depositData.decimals
+          : 18,
+      );
+    }
+
+    setAmountInput("");
+  }, [depositData]);
+
+  const handleSelectAsset = (symbol: "ETH" | "USDC") => {
+    // Only allow asset switching for manual funding
+    if (!depositData || depositData.code !== "MANUAL_DEPOSIT") return;
+
+    if (symbol === "ETH") {
+      setSelectedTokenSymbol("ETH");
+      setSelectedIsNative(true);
+      setSelectedTokenAddress(null);
+      setSelectedDecimals(18);
+    } else {
+      // USDC on Sepolia (must match server/.env USDC_ADDRESS)
+      setSelectedTokenSymbol("USDC");
+      setSelectedIsNative(false);
+      setSelectedTokenAddress(
+        "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      );
+      setSelectedDecimals(6);
+    }
+  };
+
   const handleDeposit = async () => {
     try {
+      const decimals = selectedDecimals || 18;
+
+      let amountWei: bigint;
+      if (amountInput && amountInput.trim() !== "") {
+        try {
+          amountWei = parseUnits(amountInput.trim(), decimals);
+        } catch (err: any) {
+          toast.error("Invalid amount", {
+            description:
+              err?.message || "Please enter a valid numeric amount.",
+          });
+          return;
+        }
+      } else {
+        amountWei = BigInt(depositData.missingAmountRaw);
+      }
+
       let txHash;
 
-      if (depositData.isNative) {
+      if (selectedIsNative) {
         // Native ETH Transfer using Wagmi
         txHash = await sendTransactionAsync({
           to: depositData.accountAddress as `0x${string}`,
-          value: BigInt(depositData.missingAmountRaw),
+          value: amountWei,
         });
       } else {
         // ERC-20 Transfer using Wagmi
+        if (!selectedTokenAddress) {
+          toast.error("Token address missing", {
+            description:
+              "Cannot send ERC-20 without a configured token address.",
+          });
+          return;
+        }
+
         txHash = await writeContractAsync({
-          address: depositData.tokenAddress as `0x${string}`,
+          address: selectedTokenAddress as `0x${string}`,
           abi: parseAbi(["function transfer(address to, uint256 amount)"]),
           functionName: "transfer",
           args: [
             depositData.accountAddress as `0x${string}`,
-            BigInt(depositData.missingAmountRaw),
+            amountWei,
           ],
         });
       }
@@ -141,15 +222,59 @@ export default function DepositModal({ isOpen, onClose, depositData, onResume }:
             {/* Amount */}
             <div className="flex flex-col items-center justify-center mb-5 pb-5 border-b border-slate-200/80">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                Amount Required
+                Amount to Deposit
               </span>
-              <div className="flex items-baseline gap-1.5 text-slate-800">
-                <span className="text-3xl font-black tracking-tight">
-                  {depositData.missingAmountFormatted}
-                </span>
-                <span className="text-lg font-bold text-slate-500">
-                  {depositData.tokenSymbol}
-                </span>
+              {depositData?.code === "MANUAL_DEPOSIT" && (
+                <div className="flex items-center justify-center gap-2 mt-2 mb-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectAsset("ETH")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      selectedTokenSymbol === "ETH"
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    ETH
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectAsset("USDC")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                      selectedTokenSymbol === "USDC"
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    USDC
+                  </button>
+                </div>
+              )}
+              <div className="flex flex-col items-center gap-2 w-full">
+                <div className="flex items-baseline gap-1.5 text-slate-800">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={amountInput}
+                    onChange={(e) => setAmountInput(e.target.value)}
+                    className="w-28 text-center text-3xl font-black tracking-tight bg-transparent border-b border-slate-300 focus:outline-none focus:border-indigo-500"
+                    placeholder={
+                      depositData.missingAmountFormatted ||
+                      "0.0"
+                    }
+                  />
+                  <span className="text-lg font-bold text-slate-500">
+                    {selectedTokenSymbol}
+                  </span>
+                </div>
+                {depositData.missingAmountFormatted && (
+                  <span className="text-[11px] text-slate-400">
+                    Suggested minimum:{" "}
+                    {depositData.missingAmountFormatted}{" "}
+                    {depositData.tokenSymbol}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -197,7 +322,7 @@ export default function DepositModal({ isOpen, onClose, depositData, onResume }:
                 ) : (
                   <>
                     <Wallet size={18} />
-                    Deposit {depositData.tokenSymbol}
+                    Deposit {selectedTokenSymbol}
                   </>
                 )}
               </button>

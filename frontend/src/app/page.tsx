@@ -37,6 +37,7 @@ import {
   LayoutList,
   Clock,
   GalleryHorizontalEnd,
+  Wallet,
 } from "lucide-react";
 
 import NexusNode from "@/components/flow/NexusNode";
@@ -122,6 +123,9 @@ function NexusCanvas() {
 
   // Track active execution
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [smartAccountAddress, setSmartAccountAddress] = useState<string | null>(
+    null,
+  );
 
   const { deploy, hotReload, runNow, isDeploying } = useDeployment();
   const { takeSnapshot, undo, redo } = useUndoRedo(nodes, edges);
@@ -130,6 +134,25 @@ function NexusCanvas() {
   const [defaultEdgePattern, setDefaultEdgePattern] = useState<any>("solid");
 
   const { isCompact, toggleCompact } = useContext(FlowContext);
+
+  const ensureSmartAccountAddress = useCallback(async () => {
+    if (smartAccountAddress) return smartAccountAddress;
+    try {
+      const res = await fetch("http://localhost:3001/smart-account");
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.accountAddress) {
+        throw new Error(data.error || "Failed to fetch smart account.");
+      }
+      setSmartAccountAddress(data.accountAddress);
+      return data.accountAddress as string;
+    } catch (err: any) {
+      console.error("Failed to fetch smart account address:", err);
+      toast.error("Unable to fetch smart account", {
+        description: err.message || "Check backend and RPC configuration.",
+      });
+      return null;
+    }
+  }, [smartAccountAddress]);
 
   const handleSaveWorkflow = async () => {
     try {
@@ -816,6 +839,38 @@ function NexusCanvas() {
               className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors"
             >
               <Clock size={16} className="text-indigo-500" /> Schedules
+            </button>
+
+            {/* Fund Wallet Button */}
+            <button
+              onClick={() => {
+                if (depositData) {
+                  setIsDepositModalOpen(true);
+                  return;
+                }
+
+                (async () => {
+                  const address = await ensureSmartAccountAddress();
+                  if (!address) return;
+
+                  setDepositData({
+                    code: "MANUAL_DEPOSIT",
+                    tokenSymbol: "ETH",
+                    tokenAddress: null,
+                    isNative: true,
+                    missingAmountRaw: "0",
+                    missingAmountFormatted: "",
+                    decimals: 18,
+                    accountAddress: address,
+                    workflowId: null,
+                    jobId: null,
+                  });
+                  setIsDepositModalOpen(true);
+                })();
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors"
+            >
+              <Wallet size={16} className="text-indigo-500" /> Fund Wallet
             </button>
 
             {/* Workflow Gallery Button */}
