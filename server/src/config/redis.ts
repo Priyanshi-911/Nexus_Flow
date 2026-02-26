@@ -1,12 +1,22 @@
-import IORedis from 'ioredis';
+import Redis from "ioredis";
+import dotenv from "dotenv";
 
-const connectionOptions = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  maxRetriesPerRequest: null, 
-};
+dotenv.config();
 
-export const redisConnection = new IORedis(connectionOptions);
+const redis = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL)
+  : new Redis({
+      host: process.env.REDIS_HOST || "localhost",
+      port: Number(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD || undefined
+    });
 
-redisConnection.on('connect', () => console.log('✅ Connected to Redis'));
-redisConnection.on('error', (err: any) => console.error('❌ Redis Connection Error:', err));
+redis.on("connect", () => {
+  console.log("✅ Redis connected");
+});
+
+redis.on("error", (err) => {
+  console.error("❌ Redis error:", err);
+});
+
+export default redis;
