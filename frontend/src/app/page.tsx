@@ -36,6 +36,7 @@ import {
   LayoutGrid,
   LayoutList,
   Clock,
+  GalleryHorizontalEnd,
 } from "lucide-react";
 
 import NexusNode from "@/components/flow/NexusNode";
@@ -44,6 +45,7 @@ import ContextMenu from "@/components/flow/ContextMenu";
 import LiveLogs from "@/components/LiveLogs";
 import SettingsModal from "@/components/SettingsModal";
 import ActiveSchedulesModal from "@/components/ActiveSchedulesModal";
+import WorkflowGalleryModal from "@/components/WorkflowGalleryModal";
 import DepositModal from "@/components/DepositModal"; // 🟢 NEW: Import Deposit Modal
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { useDeployment } from "@/hooks/useDeployment";
@@ -107,6 +109,7 @@ function NexusCanvas() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSchedulesOpen, setIsSchedulesOpen] = useState(false);
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
 
   // 🟢 NEW: Deposit Modal State
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
@@ -127,6 +130,90 @@ function NexusCanvas() {
   const [defaultEdgePattern, setDefaultEdgePattern] = useState<any>("solid");
 
   const { isCompact, toggleCompact } = useContext(FlowContext);
+
+  const handleSaveWorkflow = async () => {
+    try {
+      if (!globalSettings.name) {
+        toast.error("Please set a workflow name before saving.");
+        return;
+      }
+
+      const payload = {
+        name: globalSettings.name,
+        nodes,
+        edges,
+        globalSettings,
+        workflowId: activeJobId,
+      };
+
+      const response = await fetch("http://localhost:3001/workflow-state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to save workflow.");
+      }
+
+      const version = data.workflow?.version;
+      toast.success("Workflow saved!", {
+        description: version ? `Version ${version} stored.` : undefined,
+      });
+    } catch (err: any) {
+      console.error("Save workflow failed:", err);
+      toast.error("Failed to save workflow", {
+        description: err.message || "Unknown error.",
+      });
+    }
+  };
+
+  const handleLoadWorkflow = async (nameOverride?: string) => {
+    try {
+      const targetName = nameOverride || globalSettings.name;
+      if (!targetName) {
+        toast.error("Please set a workflow name before loading.");
+        return;
+      }
+
+      const response = await fetch(
+        `http://localhost:3001/workflow-state/${encodeURIComponent(
+          targetName,
+        )}`,
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to load workflow.");
+      }
+
+      const workflow = data.workflow;
+      if (!workflow) {
+        throw new Error("Invalid workflow payload from server.");
+      }
+
+      setNodes(workflow.nodes || []);
+      setEdges(workflow.edges || []);
+      setGlobalSettings((prev) => ({
+        ...prev,
+        ...(workflow.globalSettings || {}),
+        name: workflow.name || targetName || prev.name,
+      }));
+
+      if (workflow.id) {
+        setActiveJobId(workflow.id);
+        socket.emit("subscribe_job", workflow.id);
+      }
+
+      toast.success("Workflow loaded!");
+    } catch (err: any) {
+      console.error("Load workflow failed:", err);
+      toast.error("Failed to load workflow", {
+        description: err.message || "Unknown error.",
+      });
+    }
+  };
 
   // --- THE AUTO-SAVE / HOT RELOAD HOOK ---
   useEffect(() => {
@@ -731,6 +818,26 @@ function NexusCanvas() {
               <Clock size={16} className="text-indigo-500" /> Schedules
             </button>
 
+            {/* Workflow Gallery Button */}
+            <button
+              onClick={() => setIsGalleryOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors"
+            >
+              <GalleryHorizontalEnd
+                size={16}
+                className="text-indigo-500"
+              />{" "}
+              Gallery
+            </button>
+
+            {/* Save Workflow Button */}
+            <button
+              onClick={handleSaveWorkflow}
+              className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors"
+            >
+              <Save size={16} className="text-indigo-500" /> Save
+            </button>
+
             {/* Run Now Button */}
             <button
               className="flex items-center gap-2 px-4 py-2 text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors"
@@ -863,6 +970,15 @@ function NexusCanvas() {
       <ActiveSchedulesModal
         isOpen={isSchedulesOpen}
         onClose={() => setIsSchedulesOpen(false)}
+      />
+
+      {/* WORKFLOW GALLERY MODAL */}
+      <WorkflowGalleryModal
+        isOpen={isGalleryOpen}
+        onClose={() => setIsGalleryOpen(false)}
+        onSelectWorkflow={async (name: string) => {
+          await handleLoadWorkflow(name);
+        }}
       />
 
       {/* SETTINGS MODAL */}

@@ -328,6 +328,180 @@ app.post('/webhook/:workflowId', async (req, res) => {
     }
 });
 
+// --- API ROUTE: SAVE WORKFLOW EDITOR STATE ---
+app.post('/workflow-state', async (req, res) => {
+    try {
+        const {
+            name,
+            nodes,
+            edges,
+            globalSettings = {},
+            workflowId,
+        } = req.body || {};
+
+        if (!name || !Array.isArray(nodes) || !Array.isArray(edges)) {
+            return res.status(400).json({
+                success: false,
+                error: "Missing required fields: name, nodes, edges",
+            });
+        }
+
+        const safeName = String(name).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const storageKey = `workflow_state:${safeName}`;
+
+        let version = 1;
+        let createdAt = new Date().toISOString();
+        const existingRaw = await redisConnection.get(storageKey);
+        if (existingRaw) {
+            try {
+                const existing = JSON.parse(existingRaw);
+                version = (existing.version || 1) + 1;
+                createdAt = existing.createdAt || createdAt;
+            } catch {
+                // Ignore parse errors and treat as new
+            }
+        }
+
+        const now = new Date().toISOString();
+        const payload = {
+            id: workflowId || `workflow_${safeName}`,
+            name,
+            nodes,
+            edges,
+            globalSettings,
+            version,
+            createdAt,
+            updatedAt: now,
+        };
+
+        await redisConnection.set(storageKey, JSON.stringify(payload));
+
+        return res.json({ success: true, workflow: payload });
+    } catch (error: any) {
+        console.error("❌ Save Workflow State Error:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || "Internal Server Error",
+        });
+    }
+});
+
+// --- API ROUTE: LOAD WORKFLOW EDITOR STATE ---
+app.get('/workflow-state/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        if (!name) {
+            return res.status(400).json({
+                success: false,
+                error: "Missing workflow name",
+            });
+        }
+
+        const safeName = String(name).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const storageKey = `workflow_state:${safeName}`;
+        const existingRaw = await redisConnection.get(storageKey);
+
+        if (!existingRaw) {
+            return res.status(404).json({
+                success: false,
+                error: "Saved workflow not found",
+            });
+        }
+
+        let workflow;
+        try {
+            workflow = JSON.parse(existingRaw);
+        } catch (err: any) {
+            console.error("❌ Failed to parse saved workflow state:", err);
+            return res.status(500).json({
+                success: false,
+                error: "Corrupted workflow state",
+            });
+        }
+
+        return res.json({ success: true, workflow });
+    } catch (error: any) {
+        console.error("❌ Load Workflow State Error:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || "Internal Server Error",
+        });
+    }
+});
+
+// --- API ROUTE: DELETE A SAVED WORKFLOW ---
+app.delete('/workflow-state/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        if (!name) {
+            return res.status(400).json({
+                success: false,
+                error: "Missing workflow name",
+            });
+        }
+
+        const safeName = String(name).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const storageKey = `workflow_state:${safeName}`;
+        const deletedCount = await redisConnection.del(storageKey);
+
+        return res.json({
+            success: true,
+            deleted: deletedCount > 0,
+        });
+    } catch (error: any) {
+        console.error("❌ Delete Workflow State Error:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || "Internal Server Error",
+        });
+    }
+});
+
+// --- API ROUTE: LIST ALL SAVED WORKFLOWS (GALLERY) ---
+app.get('/workflow-states', async (_req, res) => {
+    try {
+        const keys = await redisConnection.keys('workflow_state:*');
+
+        if (!keys || keys.length === 0) {
+            return res.json({ success: true, workflows: [] });
+        }
+
+        const rawValues = await redisConnection.mget(keys);
+        const workflows: Array<{ id: string; name: string; createdAt?: string }> = [];
+
+        rawValues.forEach((raw) => {
+            if (!raw) return;
+            try {
+                const parsed = JSON.parse(raw);
+                if (!parsed || !parsed.name) return;
+
+                workflows.push({
+                    id: parsed.id || '',
+                    name: parsed.name,
+                    createdAt: parsed.createdAt || parsed.updatedAt,
+                });
+            } catch {
+                // Ignore malformed entries
+            }
+        });
+
+        // Optional: sort by createdAt desc when available
+        workflows.sort((a, b) => {
+            const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
+            const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
+            return bTime - aTime;
+        });
+
+        return res.json({ success: true, workflows });
+    } catch (error: any) {
+        console.error("❌ List Workflows Error:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || "Internal Server Error",
+        });
+    }
+});
+
 // --- API ROUTE: HOT RELOAD ---
 app.put('/hot-reload', async (req, res) => {
     const { workflowId, config } = req.body;
