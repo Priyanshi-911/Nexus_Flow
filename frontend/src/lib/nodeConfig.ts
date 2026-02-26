@@ -656,4 +656,26 @@ export const NODE_TYPES: Record<string, any> = {
       { name: "REASON", desc: "1-sentence explanation" },
     ],
   },
+  'ai_decision': { 
+    label: 'AI Decision Router', category: 'ai', icon: GitFork,
+    inputs: [
+      { name: 'apiKey', label: 'Gemini API Key', type: 'password', required: true },
+      { 
+        name: 'context', 
+        label: 'Context / Situation', 
+        type: 'textarea', 
+        placeholder: 'Market Sentiment is {{node_1.SENTIMENT}} and Gas is {{node_2.GAS_PRICE}}' 
+      },
+      { 
+        name: 'options', 
+        label: 'Valid Options (Comma Sep)', 
+        type: 'text', 
+        placeholder: 'BUY_ETH, SELL_ETH, WAIT' 
+      }
+    ],
+    outputs: [
+      { name: 'DECISION', desc: 'The selected option' },
+      { name: 'REASON', desc: 'Why it chose this' }
+    ] 
+  },
 };
